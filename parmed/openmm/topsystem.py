@@ -92,6 +92,58 @@ def load_topology(topology, system=None, xyz=None, box=None, condense_atom_types
             inscode = r.insertionCode
             for a in r.atoms():
                 if a.element is None:
+                    # Cresset fix for water models with virtual sites
+                    # To write an AMBER prmtop file, bonds must be present between the O atoms and the massless extra points and between the two H atoms for each water
+                    import math
+                    n_atoms = len(list(r.atoms()))
+                    if r.name in ['WAT', 'HOH', 'TP4', 'TP5', 'T4E'] and (n_atoms == 4 or n_atoms == 5): # OpenMM waters are called HOH, but include other possibilities just in case
+                        if xyz is None: # We need coordinates to calculate the correct bond lengths
+                            raise RuntimeError('Failed to convert OpenMM water virtual sites to AMBER format - no coordinates provided')
+                        # Note that virtual sites MUST have been added by addExtraParticles (don't use deprecated function convertWater) for these coordinates to be correct
+                        if isinstance(xyz, str):
+                            xyz = load_file(xyz, skip_bonds=True)
+                            coordinates = xyz.coordinates
+                        else:
+                            coordinates = xyz
+
+                        o_atoms = []
+                        h_atoms = []
+                        for water_atom in r.atoms():
+                            element = water_atom.element
+                            if element and element.atomic_number == 8:
+                                o_atoms.append(water_atom)
+                            elif element and element.atomic_number == 1:
+                                h_atoms.append(water_atom)
+
+                        if len(o_atoms) == 1 and len(h_atoms) == 2: # Definitely a water
+                            existing_forces = [system.getForce(i) for i in range(system.getNumForces())] # List is probably less than 10 items in size
+                            existing_bond_forces = [f for f in existing_forces if type(f) == mm.HarmonicBondForce]
+                            if len(existing_bond_forces) == 0: # Shouldn't happen as we have O-H bonds in water molecules
+                                bond_force = mm.HarmonicBondForce()
+                                system.addForce(bond_force)
+                            else:
+                                bond_force = existing_bond_forces[0]
+
+                            bond_force_constant_kj_mol_nm2 = 462750.4 # k for O-EP and HW-HW - original value from dat/leap/parm/frcmod.tip4p* and converted value from openmmff xml files
+
+                            # Add O-EP bond
+                            oxygen_pos = coordinates[o_atoms[0].index]
+                            extra_point_pos = coordinates[a.index]
+                            o_ex_distance_nm = math.sqrt((oxygen_pos.x - extra_point_pos.x)**2 + (oxygen_pos.y - extra_point_pos.y)**2 + (oxygen_pos.z - extra_point_pos.z)**2)
+
+                            bond_force.addBond(o_atoms[0].index, a.index, o_ex_distance_nm, bond_force_constant_kj_mol_nm2)
+                            topology.addBond(o_atoms[0], a)
+
+                            # Add HW-HW bond
+                            h1_pos = coordinates[h_atoms[0].index]
+                            h2_pos = coordinates[h_atoms[1].index]
+                            h_h_distance_nm = math.sqrt((h1_pos.x - h2_pos.x)**2 + (h1_pos.y - h2_pos.y)**2 + (h1_pos.z - h2_pos.z)**2)
+
+                            bond_force.addBond(h_atoms[0].index, h_atoms[1].index, h_h_distance_nm, bond_force_constant_kj_mol_nm2)
+                            topology.addBond(h_atoms[0], h_atoms[1])
+
+                            a.name = 'EP' # Must be called EP or LP for the virtual sites to be recognised by OpenMM or AMBER when reading the prmtop file
+                    # End of Cresset fix for water models with virtual sites
                     atom = ExtraPoint(name=a.name)
                 else:
                     try:
