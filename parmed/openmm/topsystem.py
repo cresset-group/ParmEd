@@ -124,23 +124,19 @@ def load_topology(topology, system=None, xyz=None, box=None, condense_atom_types
                             else:
                                 bond_force = existing_bond_forces[0]
 
-                            bond_force_constant_kj_mol_nm2 = 462750.4 # k for O-EP and HW-HW - original value from dat/leap/parm/frcmod.tip4p* and converted value from openmmff xml files
+                            bond_force_constant_kj_mol_nm2 = 462750.4 # k for OW-EP and HW-HW - original value from dat/leap/parm/frcmod.tip4p* and converted value from openmmff xml files
 
-                            # Add O-EP bond
+                            # Add OW-EP bond
                             oxygen_pos = coordinates[o_atoms[0].index]
                             extra_point_pos = coordinates[a.index]
                             o_ex_distance_nm = math.sqrt((oxygen_pos.x - extra_point_pos.x)**2 + (oxygen_pos.y - extra_point_pos.y)**2 + (oxygen_pos.z - extra_point_pos.z)**2)
-
                             bond_force.addBond(o_atoms[0].index, a.index, o_ex_distance_nm, bond_force_constant_kj_mol_nm2)
-                            topology.addBond(o_atoms[0], a)
 
                             # Add HW-HW bond
                             h1_pos = coordinates[h_atoms[0].index]
                             h2_pos = coordinates[h_atoms[1].index]
                             h_h_distance_nm = math.sqrt((h1_pos.x - h2_pos.x)**2 + (h1_pos.y - h2_pos.y)**2 + (h1_pos.z - h2_pos.z)**2)
-
                             bond_force.addBond(h_atoms[0].index, h_atoms[1].index, h_h_distance_nm, bond_force_constant_kj_mol_nm2)
-                            topology.addBond(h_atoms[0], h_atoms[1])
 
                             a.name = 'EP' # Must be called EP or LP for the virtual sites to be recognised by OpenMM or AMBER when reading the prmtop file
                     # End of Cresset fix for water models with virtual sites
