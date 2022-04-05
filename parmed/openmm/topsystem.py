@@ -336,7 +336,12 @@ def _process_dihedral(struct, force):
             dihed_type = DihedralType(phi_k, per, phase)
             typemap[key] = dihed_type
             struct.dihedral_types.append(dihed_type)
-        improper = ai in ak.bond_partners and aj in ak.bond_partners and al in ak.bond_partners
+        # Cresset fix for SMIRNOFF improper torsions being incorrectly flagged as proper torsions
+        improperi = aj in ai.bond_partners and ak in ai.bond_partners and al in ai.bond_partners
+        improperj = ai in aj.bond_partners and ak in aj.bond_partners and al in aj.bond_partners
+        improperk = ai in ak.bond_partners and aj in ak.bond_partners and al in ak.bond_partners
+        improperl = ai in al.bond_partners and aj in al.bond_partners and ak in al.bond_partners
+        improper = improperi or improperj or improperk or improperl
         struct.dihedrals.append(Dihedral(ai, aj, ak, al, improper=improper, type=dihed_type))
     struct.dihedral_types.claim()
 
