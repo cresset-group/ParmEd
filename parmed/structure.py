@@ -1692,7 +1692,7 @@ class Structure:
             if u.is_quantity(value):
                 value = value.value_in_unit(u.angstroms)
             value = list(value)
-            coords = np.array(value, dtype=np.float64, copy=False, subok=True)
+            coords = np.array(value, dtype=np.float64, subok=True)
             coords = coords.reshape((-1, len(self.atoms), 3))
             if len(coords) > 0:
                 for a, xyz in zip(self.atoms, coords[0]):
@@ -1773,7 +1773,7 @@ class Structure:
                 box = value
             else:
                 box = _strip_box_units(list(value))
-            box = np.array(box, dtype=np.float64, copy=False, subok=True)
+            box = np.array(box, dtype=np.float64, subok=True)
             if box.shape != (6,):
                 if len(box.shape) != 2 or box.shape[-1] != 6:
                     raise ValueError('Box information must be 6 floats')
@@ -1840,7 +1840,7 @@ class Structure:
                 except AttributeError:
                     pass
         else:
-            value = np.array(value, copy=False).reshape((-1,len(self.atoms),3))
+            value = np.asarray(value).reshape((-1,len(self.atoms),3))
             for atom, xyz in zip(self.atoms, value[0]):
                 atom.vx, atom.vy, atom.vz = xyz
 
