@@ -401,7 +401,8 @@ class GromacsTopologyFile(Structure, TopFromStructureMixin, metaclass=FileFormat
                     dihedral_types = dict()
                     exc_types = dict()
                 elif current_section == 'atoms':
-                    molecule.add_atom(*self._parse_atoms(line, params))
+                    atom, resname, resnum, icode = self._parse_atoms(line, params)
+                    molecule.add_atom(atom, resname, resnum, inscode=icode)
                 elif current_section == 'bonds':
                     bond, bond_type = self._parse_bonds(line, bond_types, molecule.atoms)
                     molecule.bonds.append(bond)
@@ -582,7 +583,15 @@ class GromacsTopologyFile(Structure, TopFromStructureMixin, metaclass=FileFormat
         else:
             atom = Atom(atomic_number=atomic_number, name=words[4],
                         type=words[1], charge=charge, mass=mass)
-        return atom, words[3], int(words[2])
+
+        # check for insertion code and negative res number
+        if words[2].isnumeric() or (words[2].startswith('-') and words[2][1:].isnumeric()):
+            icode = ''
+            resnum = int(words[2])
+        else:
+            icode = words[2][-1]
+            resnum = int(words[2][:-1])
+        return atom, words[3], resnum, icode
 
     def _parse_bonds(self, line, bond_types, atoms):
         """ Parses a bond line. Returns a Bond, BondType/None """
@@ -1426,13 +1435,11 @@ class GromacsTopologyFile(Structure, TopFromStructureMixin, metaclass=FileFormat
             # Print all atom types
             if not itp :
                 parfile.write('[ atomtypes ]\n')
-                if any(typ._bond_type is not None
-                        for key, typ in params.atom_types.items()):
+                if any(typ._bond_type is not None for key, typ in params.atom_types.items()):
                     print_bond_types = True
                 else:
                     print_bond_types = False
-                if all(typ.atomic_number != -1
-                        for key, typ in params.atom_types.items()):
+                if all(typ.atomic_number != -1 for key, typ in params.atom_types.items()):
                     print_atnum = True
                 else:
                     print_atnum = False

@@ -4,12 +4,15 @@ pmemd (or others). The program specification loads the appropriate
 dictionaries with default values, etc. It can read and write mdins.
 """
 from io import TextIOBase
+from re import findall
 
 # This module will create and read a sander/pmemd input
 from .cntrl import cntrl
 from .ewald import ewald
 from .pb import pb
 from .qmmm import qmmm
+from .rism import rism
+from .gbnsr6 import gbnsr6
 from ...exceptions import InputError
 
 
@@ -22,6 +25,13 @@ def addOn(line, string, file):
     else:
         return line + string
 
+def splitStr(string):
+    # split string at commas not within single or double quotes
+    pattern = r"""('[^']*'|"[^"]*"|[^'",\s]+)"""
+    matches = findall(pattern, string)
+
+    return matches
+
 
 class Mdin:
 
@@ -32,6 +42,8 @@ class Mdin:
         self.ewald_obj = ewald() # object with ewald namelist vars in a dictionary
         self.pb_obj = pb()       # object with pb namelist vars in a dictionary
         self.qmmm_obj = qmmm()   # object with qmmm namelist vars in a dictionary
+        self.rism_obj = rism()   # object with rism namelist vars in a dictionary
+        self.gbnsr6_obj = gbnsr6()   # object with gbnsr6 namelist vars in a dictionary
         self.verbosity = 0       # verbosity level: 0 -- print nothing
                                  #                  1 -- print errors
                                  #                  2 -- 1 + warnings
@@ -46,6 +58,10 @@ class Mdin:
         self.pb_nml_defaults = {}    # dictionary with default pb namelist vars
         self.qmmm_nml = {}           # dictionary with qmmm namelist vars
         self.qmmm_nml_defaults = {}  # dictionary with default qmmm namelist vars
+        self.rism_nml = {}           # dictionary with rism namelist vars
+        self.rism_nml_defaults = {}  # dictionary with default rism namelist vars
+        self.gbnsr6_nml = {}           # dictionary with gbnsr6 namelist vars
+        self.gbnsr6_nml_defaults = {}  # dictionary with default gbnsr6 namelist vars
         self.valid_namelists = {}    # array with valid namelists for each program
         self.title = 'mdin prepared by ParmEd'   # title for the mdin file
 
@@ -55,7 +71,8 @@ class Mdin:
             self.ewald_nml = self.ewald_obj.sander
             self.pb_nml = self.pb_obj.sander
             self.qmmm_nml = self.qmmm_obj.sander
-            self.valid_namelists = {'cntrl', 'ewald', 'qmmm', 'pb'}
+            self.rism_nml = self.rism_obj.sander
+            self.valid_namelists = {'cntrl', 'ewald', 'qmmm', 'pb', 'rism'}
         elif self.program == "sander.APBS":
             self.cntrl_nml = self.cntrl_obj.sander
             self.pb_nml = self.pb_obj.sanderAPBS
@@ -64,6 +81,10 @@ class Mdin:
             self.cntrl_nml = self.cntrl_obj.pmemd
             self.ewald_nml = self.ewald_obj.pmemd
             self.valid_namelists = {'cntrl', 'ewald'}
+        elif self.program == "gbnsr6":
+            self.cntrl_nml = self.cntrl_obj.gbnsr6
+            self.gbnsr6_nml = self.gbnsr6_obj.gbnsr6
+            self.valid_namelists = ['cntrl', 'gb']
         else:
             raise InputError(f"Unrecognized program [{self.program}]")
 
@@ -71,10 +92,12 @@ class Mdin:
         self.ewald_nml_defaults = self.ewald_nml.copy()
         self.pb_nml_defaults = self.pb_nml.copy()
         self.qmmm_nml_defaults = self.qmmm_nml.copy()
+        self.rism_nml_defaults = self.rism_nml.copy()
+        self.gbnsr6_nml_defaults = self.gbnsr6_nml.copy()
 
     def write(self, filename: str = 'mdin'):
 
-        def write_nml(nml, defaults, file: TextIOBase, header) -> None:
+        def write_nml(nml, defaults, file: TextIOBase, header, print_header=False) -> None:
             # automatic indent of single space
             line = ' '
             header_printed = False
@@ -85,13 +108,25 @@ class Mdin:
                 if not header_printed:
                     file.write(f"{header}\n")
                     header_printed = True
-                if isinstance(val, str):
+                if isinstance(val, (list, tuple)):
+                    if isinstance(val[0], str):
+                        temp_out = ','.join(map(lambda x: f"'{x}'", val))
+                        line = addOn(line, f"{var}={temp_out}, ", file)
+                    else:
+                        line = addOn(line, f"{var}={','.join(map(str, val))}, ", file)
+                elif isinstance(val, str):
                     line = addOn(line, f"{var}='{val}', ", file)
                 else:
                     line = addOn(line, f"{var}={val}, ", file)
             # flush any remaining items that haven't yet been printed to the mdin file
             if line.strip():
                 file.write(f"{line}\n")
+
+            # gbnsr6 requieres always print the cntrl header, so we check if was already printed
+            if not header_printed and print_header:
+                file.write(f"{header}\n")
+                header_printed = True
+
             # End namelist
             if header_printed:
                 file.write('/\n')
@@ -99,11 +134,14 @@ class Mdin:
         # open the file for writing and write the header and &cntrl namelist
         file = open(filename,'w')
         file.write(self.title + '\n')
-        write_nml(self.cntrl_nml, self.cntrl_nml_defaults, file, "&cntrl")
+        write_nml(self.cntrl_nml, self.cntrl_nml_defaults, file, "&cntrl", True)
         write_nml(self.ewald_nml, self.ewald_nml_defaults, file, "&ewald")
         pb_nml_name = "&apbs" if self.program == "sander.APBS" else "&pb"
         write_nml(self.pb_nml, self.pb_nml_defaults, file, pb_nml_name)
-        if self.cntrl_nml["ifqnt"] == 1:
+        write_nml(self.gbnsr6_nml, self.gbnsr6_nml_defaults, file, "&gb")
+        if self.cntrl_nml.get('irism'):
+            write_nml(self.rism_nml, self.rism_nml_defaults, file, "&rism", True)
+        if self.cntrl_nml.get("ifqnt") == 1:
             write_nml(self.qmmm_nml, self.qmmm_nml_defaults, file, "&qmmm")
 
         # Write the cards to the input file
@@ -146,7 +184,7 @@ class Mdin:
             elif inblock and lines[i].strip().startswith('&'):
                 raise InputError(f"Invalid input file ({filename}). Namelist not terminated")
             elif inblock:
-                items = lines[i].strip().split(',')
+                items = splitStr(lines[i].strip())
                 j = 0
                 while j < len(items):
                     items[j] = items[j].strip()
@@ -164,11 +202,20 @@ class Mdin:
         begin_field = -1
         for i in range(len(block_fields)):
             for j in range(len(block_fields[i])):
-                if not '=' in block_fields[i][j]:
+                if block_fields[i][j].startswith("'") or block_fields[i][j].startswith("\"") or not '=' in block_fields[i][j]:
                     if begin_field == -1:
                         raise InputError(f'Invalid input file ({filename}).')
                     else:
-                        block_fields[i][begin_field] += ',' + block_fields[i][j]
+                        if block_fields[i][j].startswith("'") or block_fields[i][j].startswith("\""):
+                            block_fields[i][begin_field] += block_fields[i][j]
+                        
+                            # prevents treating '=' in quoted field values (e.g. wildcards for restraintmask)
+                            # from delimiting new fields
+                            if '=' in block_fields[i][j]:
+                                block_fields[i][j] = block_fields[i][j].replace('=','')
+                        
+                        else:
+                            block_fields[i][begin_field] += ',' + block_fields[i][j]
                 else:
                     begin_field = j
 
@@ -178,7 +225,7 @@ class Mdin:
                 if not '=' in block_fields[i][j]:
                     continue
                 else:
-                    var = block_fields[i][j].split('=')
+                    var = block_fields[i][j].split('=', 1)
                     self.change(blocks[i], var[0].strip(), var[1].strip())
 
     def change(self, namelist, variable, value):
@@ -190,14 +237,17 @@ class Mdin:
             pb=(self.pb_nml, self.pb_nml_defaults),
             apbs=(self.pb_nml, self.pb_nml_defaults),
             qmmm=(self.qmmm_nml, self.qmmm_nml_defaults),
+            rism=(self.rism_nml, self.rism_nml_defaults),
+            gb=(self.gbnsr6_nml, self.gbnsr6_nml_defaults)
         )
 
         variable = variable.lower()
-        if isinstance(value, str):
+        if isinstance(value, str) and len(value) > 0:
             if (value[0] == value[-1] == "'") or (value[0] == value[-1] == '"'):
                 value = value[1:-1]
 
         if namelist in namelist_map:
+
             nml, nml_defaults = namelist_map[namelist]
             if variable in nml:
                 mytype = type(nml_defaults[variable])
@@ -299,6 +349,12 @@ class Mdin:
         self.change('cntrl','maxcyc', maxcyc)
         self.change('cntrl','ncyc', ncyc)
         self.change('cntrl','ntmin', ntmin)
+
+    def rism(self, imin=5, irism=1):
+        self.change('cntrl', 'imin', imin)
+        self.change('cntrl', 'irism', irism)
+
+    #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 
     def AddCard(self, title='Residues in card', cardString='RES 1'):
         self.cards.append('%s\n%s\nEND' % (title, cardString))
