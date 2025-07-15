@@ -16,6 +16,7 @@ from ..exceptions import SimulationError, SimulationWarning, UnhandledArgumentWa
 import sys
 import warnings
 from ...vec3 import Vec3
+from ...geometry import reduce_box_vectors
 try:
     from openmm.app import (
         forcefield as ff, OBC1, OBC2, GBn, HCT, GBn2, Simulation, DCDReporter, amberprmtopfile
@@ -41,6 +42,7 @@ from parmed.amber import AmberParm, Rst7, AmberMdcrd, AmberMask, NetCDFTraj
 from parmed.openmm import (StateDataReporter, NetCDFReporter, MdcrdReporter,
         RestartReporter, ProgressReporter, EnergyMinimizerReporter)
 from parmed import unit as u
+from parmed.geometry import reduce_box_vectors
 
 # Load the Amber topology file
 parm = AmberParm('%s', '%s')
@@ -53,7 +55,7 @@ def positional_restraints(mask, weights, refc, scriptfile=None):
     """
     parm = mask.parm # store the parm object
     try:
-        refc = refc.reshape((-1, len(parm.atoms), 3))
+        refc = refc.coordinates.reshape((-1, len(parm.atoms), 3))
     except ValueError:
         raise SimulationError('Invalid shape of coordinate array')
 
@@ -495,15 +497,17 @@ def simulate(parm, args):
     if parm.ptr('ifbox') > 0:
         # Only set box vectors if box is present
         if scriptfile is not None:
-            scriptfile.write('simulation.context.setPeriodicBoxVectors(*parm.box_vectors)\n\n')
-        simulation.context.setPeriodicBoxVectors(*position_container.box_vectors)
+            scriptfile.write('reduced_box_vecs = reduce_box_vectors(*position_container.box_vectors)*u.angstroms\n'
+                             'simulation.context.setPeriodicBoxVectors(*reduced_box_vecs)\n\n')
+        reduced_box_vecs = reduce_box_vectors(*position_container.box_vectors)*u.angstroms
+        simulation.context.setPeriodicBoxVectors(*reduced_box_vecs)
 
     # Velocities
     if runmd and mdin.cntrl_nml['irest'] == 1 and position_container.hasvels:
         if scriptfile is not None:
             scriptfile.write('# Set velocities\n')
-            scriptfile.write('simulation.context.setVelocities(parm.velocities)\n')
-        simulation.context.setVelocities(position_container.velocities)
+            scriptfile.write('simulation.context.setVelocities(parm.velocities/10)\n')
+        simulation.context.setVelocities(position_container.velocities/10) # /10 for Å/ps to nm/ps
     elif runmd:
         if scriptfile is not None:
             scriptfile.write('# Set velocities\n')
@@ -562,7 +566,7 @@ def simulate(parm, args):
                                       maxIterations=mdin.cntrl_nml['maxcyc'])
             rep.report(simulation)
             # Write a restart file with the new coordinates
-            restrt_reporter = RestartReporter(restart, 1, parm.ptr('natom'), False,
+            restrt_reporter = RestartReporter(restart, 1, False,
                                               mdin.cntrl_nml['ntxo'] == 2, write_velocities=False)
             restrt_reporter.report(simulation, simulation.context.getState(getPositions=True,
                                    enforcePeriodicBox=bool(mdin.cntrl_nml['ntb'])))
@@ -817,7 +821,8 @@ def energy(parm, args, output=sys.stdout):
     if applayer:
         # Write out a temporary topology file, load an amberprmtopfile, then
         # delete that file
-        tmp = tempfile.mktemp(suffix='.parm7')
+        fd, tmp = tempfile.mkstemp(suffix='.parm7')
+        os.close(fd)
         try:
             parm.write_parm(tmp)
             parm_ = amberprmtopfile.AmberPrmtopFile(tmp)

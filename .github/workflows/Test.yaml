@@ -13,35 +13,36 @@ jobs:
     strategy:
       matrix:
         os: ["ubuntu-latest"]
-        python-version: ["3.8", "3.9"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
     - name: Check out source code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    - name: Setup Miniconda
-      uses: conda-incubator/setup-miniconda@v2
+    - name: Setup conda environment
+      uses: conda-incubator/setup-miniconda@v3
       with:
-        auto-update-conda: false
-        python-version: ${{ matrix.python-version }}
-        environment-file: devtools/environment-dev.yaml
         activate-environment: parmed-dev
+        auto-activate-base: false
+        environment-file: devtools/environment-dev.yaml
+        miniforge-variant: Miniforge3
+        python-version: ${{ matrix.python-version }}
 
-    - name: Environment Information
+    - name: Optionally install AmberTools
+      if: ${{ matrix.python-version != 3.13 }}
       shell: bash -l {0}
-      run: |
-        conda info
-        conda list
+      run: conda install "ambertools >=20.15" -c conda-forge -yq
 
     - name: Install and test
-      shell: bash -lex {0}
+      shell: bash -lx {0}
       run: |
+        env
         bash -ex devtools/ci/install.sh
 
     - name: Upload Coverage Results
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v5
       if: endsWith(github.ref, '/master')
       with:
         token: ${{ secrets.CODECOV_TOKEN }}

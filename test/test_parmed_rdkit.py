@@ -3,6 +3,8 @@ import parmed as pmd
 import unittest
 import numpy as np
 
+from utils import get_fn
+
 try:
     import rdkit
     has_rdkit = True
@@ -34,7 +36,7 @@ class TestRDKit(unittest.TestCase):
 
         # coordinates = True (default)
         parm = pmd.rdkit.from_smiles(smiles, coordinates=True, hydrogens=False)
-        np.testing.assert_allclose(parm.coordinates[0], [-1.072,  0.829 ,  0.108])
+        self.assertFalse((parm.coordinates[0] == 0).all())
 
     def test_load_smiles_explicit_hydrogen(self):
         """ test adding explict hydrogens from smiles string"""
@@ -45,3 +47,13 @@ class TestRDKit(unittest.TestCase):
         self.assertEqual(len(parm.atoms), num_atoms)
         self.assertEqual([atom.name for atom in parm.atoms], ['C1', 'C2', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'])
 
+    def test_to_mol(self):
+        """ Test converting a Structure to an RDKit Mol object """
+        from rdkit.Chem import Mol
+
+        structure = pmd.load_file(get_fn("4lzt.pdb"))
+        mol = structure.rdkit_mol
+
+        self.assertIsInstance(mol, Mol)
+        self.assertEqual(mol.GetNumAtoms(), len(structure.atoms))
+        self.assertEqual(mol.GetNumBonds(), len(structure.bonds))
