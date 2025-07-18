@@ -226,10 +226,12 @@ class ChamberParm(AmberParm):
 
     #===================================================
 
-    def remake_parm(self):
+    def remake_parm(self, reorder_molecules=True):
         """
         Fills :attr:`parm_data` from the data in the parameter and topology
         arrays (e.g., :attr:`atoms`, :attr:`bonds`, :attr:`bond_types`, ...)
+
+        The reorder_molecules attribute is unused
         """
         # Get rid of terms containing deleted atoms and empty residues
         self.prune_empty_terms()

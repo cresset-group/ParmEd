@@ -249,8 +249,9 @@ class AmoebaParm(AmberParm):
 
     #=============================================
 
-    def remake_parm(self):
-        """ Recomputes the topology file parameters and fills parm_data """
+    def remake_parm(self, reorder_molecules=True):
+        """ Recomputes the topology file parameters and fills parm_data 
+            The reorder_molecules attribute is unused """
         # Get rid of terms containing deleted atoms and empty residues
         self.prune_empty_terms()
         self.residues.prune()
