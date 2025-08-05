@@ -269,7 +269,7 @@ class parmout(Action):
         if self.rst_name is not None:
             if not Action.overwrite and os.path.exists(self.rst_name):
                 raise FileExists(f'{self.rst_name} exists; not overwriting.')
-        self.parm.write_parm(self.filename)
+        self.parm.write_parm(self.filename, force_reorder=False)
         if self.rst_name is not None:
             self.parm.save(self.rst_name, format=self.rst7_format, overwrite=Action.overwrite)
 
@@ -2829,7 +2829,7 @@ class interpolate(Action):
             parm1.load_atom_info()
             newname = '%s.%d' % (self.prefix, i+self.startnum)
             print('Printing %s' % newname)
-            parm1.write_parm(newname)
+            parm1.write_parm(newname, force_reorder=False)
         # Restore the original charges
         parm1.parm_data['CHARGE'] = orig_chg1
         parm1.load_atom_info()
