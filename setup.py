@@ -28,6 +28,7 @@ def prepare_env_for_osx():
         '20': '11.5',
     }
     os.environ['CXX'] = 'clang++'
+    os.environ['CXXFLAGS'] = '-std=c++17' # Default clang++ cause compiler error
     os.environ['CC'] = 'clang'
     darwin_major = os.uname()[2].split('.')[0]
     if darwin_major in darwin_major_to_osx_map:
