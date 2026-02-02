@@ -7,7 +7,6 @@ import math
 import numpy as np
 import os
 import re
-import sys
 from io import StringIO
 import parmed as pmd
 from parmed.amber import (
@@ -21,6 +20,7 @@ from parmed import topologyobjects, load_file, Structure
 from parmed.tools import change
 import parmed.unit as u
 from parmed.utils import PYPY
+from parmed.gromacs import GromacsTopologyFile
 import pickle
 import random
 import saved_outputs as saved
@@ -30,7 +30,6 @@ from utils import (
     get_fn, FileIOTestCase, equal_atoms, create_random_structure, HAS_GROMACS,
     diff_files, has_openmm
 )
-import warnings
 from string import ascii_letters as letters
 
 def _picklecycle(obj):
@@ -360,6 +359,10 @@ class TestReadParm(FileIOTestCase):
         parm2.write_parm(f)
         f.seek(0)
         check_parm_for_cmap(readparm.AmberParm(f))
+        # Check that from_structure works correctly when reading from GROMACS with just cmap
+        from_struct_parm = readparm.AmberParm.from_structure(GromacsTopologyFile.from_structure(parm))
+        self.assertIs(type(from_struct_parm), type(parm))
+        check_parm_for_cmap(from_struct_parm)
 
     def test_chamber_gas_parm(self):
         """Test the ChamberParm class with a non-periodic (gas phase) prmtop"""
@@ -1303,14 +1306,15 @@ class TestParameterFiles(FileIOTestCase):
     @unittest.skipIf(os.getenv('AMBERHOME') is None, 'Cannot test w/out Amber')
     def test_lib_without_residueconnect(self):
         """ Test parsing OFF library files without RESIDUECONNECT """
-        fn = os.path.join(os.getenv('AMBERHOME'), 'dat', 'leap', 'lib',
-                          'lipid14.lib')
+        fn = os.path.join(os.getenv('AMBERHOME'), 'dat', 'leap', 'lib', 'lipid14.lib')
+        if not os.path.exists(fn):
+            # Support newer versions of AmberTools where lipid14 is "oldff"
+            fn = os.path.join(os.getenv('AMBERHOME'), 'dat', 'leap', 'lib', 'oldff', 'lipid14.lib')
         self.assertTrue(AmberOFFLibrary.id_format(fn))
         lib = AmberOFFLibrary.parse(fn)
         self.assertIs(lib['LA'].head, lib['LA'].tail) # weird...
         # Nucleic acid caps
-        fn = os.path.join(os.getenv('AMBERHOME'), 'dat', 'leap', 'lib',
-                          'cph_nucleic_caps.lib')
+        fn = os.path.join(os.getenv('AMBERHOME'), 'dat', 'leap', 'lib', 'cph_nucleic_caps.lib')
         self.assertTrue(AmberOFFLibrary.id_format(fn))
         lib = AmberOFFLibrary.parse(fn)
         self.assertEqual(len(lib), 2)
@@ -2406,7 +2410,7 @@ class TestAmberMdin(FileIOTestCase):
         """ Tests the Mdin object basic features """
         fn = self.get_fn('test.mdin', written=True)
         mdin1 = mdin.Mdin('sander')
-        self.assertEqual(set(mdin1.valid_namelists), {'cntrl', 'ewald', 'qmmm', 'pb'})
+        self.assertEqual(set(mdin1.valid_namelists), {'cntrl', 'ewald', 'qmmm', 'pb', 'rism'})
         self.assertEqual(mdin1.title, 'mdin prepared by ParmEd')
         self.assertEqual(mdin1.verbosity, 0)
         # What the heck was this for?
@@ -2486,6 +2490,11 @@ class TestAmberMdin(FileIOTestCase):
         self.assertEqual(mdin1.cntrl_nml['maxcyc'], 1)
         self.assertEqual(mdin1.cntrl_nml['ncyc'], 10)
         self.assertEqual(mdin1.cntrl_nml['ntmin'], 1)
+        mdin1.rism()
+        self.assertEqual(mdin1.cntrl_nml['imin'], 5)
+        self.assertEqual(mdin1.cntrl_nml['irism'], 1)
+        self.assertEqual(mdin1.rism_nml['closure'], ['kh'])
+
         mdin1.change('cntrl', 'ifqnt', 1)
         mdin1.change('pb', 'istrng', 1.0)
         mdin1.change('qmmm', 'qmcharge', -1)
@@ -2502,12 +2511,28 @@ class TestAmberMdin(FileIOTestCase):
             self.assertEqual(mdin1.cntrl_nml[var], mdin2.cntrl_nml[var])
         for var in mdin1.qmmm_nml.keys():
             self.assertEqual(mdin1.qmmm_nml[var], mdin2.qmmm_nml[var])
+        for var in mdin1.rism_nml.keys():
+            self.assertEqual(mdin1.rism_nml[var], mdin2.rism_nml[var])
         mdin3 = mdin.Mdin(program='pmemd')
         self.assertRaises(InputError, lambda: mdin3.change('cntrl', 'ievb', 1))
         self.assertRaises(InputError, lambda: mdin.Mdin(program='charmm'))
         mdin4 = mdin.Mdin(program='sander.APBS')
         mdin4.change('cntrl', 'igb', 10)
         mdin4.change('pb', 'bcfl', 1)
+
+        fn2 = self.get_fn('test2.mdin', written=True)
+        mdin5 = mdin.Mdin(program='gbnsr6')
+        self.assertEqual(mdin5.cntrl_nml['inp'], 1)
+        self.assertEqual(mdin5.gbnsr6_nml['epsin'], 1.0)
+        self.assertEqual(mdin5.gbnsr6_nml['epsout'], 78.5)
+        mdin5.write(fn2)
+        mdin6 = mdin.Mdin(program='gbnsr6')
+        mdin6.read(fn2)
+        for var in mdin5.cntrl_nml.keys():
+            self.assertEqual(mdin5.cntrl_nml[var], mdin6.cntrl_nml[var])
+        for var in mdin5.gbnsr6_nml.keys():
+            self.assertEqual(mdin5.gbnsr6_nml[var], mdin6.gbnsr6_nml[var])
+
 
 class TestRst7Class(FileIOTestCase):
     """ Test the Rst7 class """

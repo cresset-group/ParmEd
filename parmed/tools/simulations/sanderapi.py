@@ -94,10 +94,10 @@ def energy(parm, args, output=sys.stdout):
         ).format(e.vdw_14, e.elec_14, e.vdw, e.elec, e.tot))
     else:
         output.write((
-            'Bond     = %20.7f     Angle    = %20.7f\n'
-            'Dihedral = %20.7f     1-4 vdW  = %20.7f\n'
-            '1-4 Elec = %20.7f     vdWaals  = %20.7f\n'
-            'Elec.    = %20.7f'
+            'Bond     = {:20.7f}     Angle    = {:20.7f}\n'
+            'Dihedral = {:20.7f}     1-4 vdW  = {:20.7f}\n'
+            '1-4 Elec = {:20.7f}     vdWaals  = {:20.7f}\n'
+            'Elec.    = {:20.7f}'
         ).format(e.bond, e.angle, e.dihedral, e.vdw_14, e.elec_14, e.vdw, e.elec))
         if igb != 0 and inp.ntb == 0:
             output.write(f'     Egb      = {e.gb:20.7f}')
@@ -126,15 +126,15 @@ def minimize(parm, igb, saltcon, cutoff, tol, maxcyc, disp=True, callback=None):
 
     # Define the objective function to minimize
     def energy_function(xyz):
-        sander.set_positions(xyz)
+        sander.set_positions(xyz.reshape(-1, 3))
         e, f = sander.energy_forces()
-        return e.tot, -np.array(f)
+        return e.tot, -np.array(f).reshape(-1)
     with sander.setup(parm, parm.coordinates, parm.box, inp):
         options = dict(maxiter=maxcyc, disp=disp, gtol=tol)
         more_options = dict()
         if callable(callback):
             more_options['callback'] = callback
-        results = optimize.minimize(energy_function, parm.coordinates, method='L-BFGS-B', jac=True,
+        results = optimize.minimize(energy_function, parm.coordinates.reshape(-1), method='L-BFGS-B', jac=True,
                                     options=options, **more_options)
         parm.coordinates = results.x
     if not results.success:
